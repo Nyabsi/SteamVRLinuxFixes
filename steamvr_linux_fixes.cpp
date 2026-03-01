@@ -22,7 +22,7 @@ std::unordered_map<VkQueue, VkDevice> g_queueToDevice;
 VKAPI_ATTR VkResult VKAPI_CALL Hook_vkEnumerateInstanceExtensionProperties(const char* pLayerName,
                                                                            uint32_t* pPropertyCount,
                                                                            VkExtensionProperties* pProperties) {
-  if (pLayerName && strcmp(pLayerName, "VK_LAYER_BNUUY_timing_fix") == 0) {
+  if (pLayerName && strcmp(pLayerName, LAYER_NAME) == 0) {
     if (pPropertyCount)
       *pPropertyCount = 0;
     return VK_SUCCESS;

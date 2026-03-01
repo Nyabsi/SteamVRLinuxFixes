@@ -7,6 +7,8 @@
 #include <mutex>
 #include <unordered_map>
 
+#define LAYER_NAME "VK_LAYER_BNUUY_steamvr_linux_fixes"
+
 struct DeviceDispatch {
   PFN_vkGetDeviceProcAddr GetDeviceProcAddr = nullptr;
   PFN_vkGetDeviceQueue GetDeviceQueue = nullptr;
