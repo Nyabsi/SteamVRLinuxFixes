@@ -12,13 +12,15 @@ std::atomic<uint64_t> g_presentCounter{1};
 VkSwapchainKHR g_lastSwapchain = VK_NULL_HANDLE;
 
 std::unordered_map<VkInstance, PFN_vkGetInstanceProcAddr> g_next_gipa;
-
 std::unordered_map<VkDevice, DeviceDispatch> g_deviceDispatch;
 std::mutex g_mapMutex;
+
+bool g_patchesInstalled = false;
 
 std::unordered_map<VkPhysicalDevice, VkInstance> g_physDevToInstance;
 std::unordered_map<VkDevice, VkPhysicalDevice> g_deviceToPhysDev;
 std::unordered_map<VkQueue, VkDevice> g_queueToDevice;
+
 
 VKAPI_ATTR VkResult VKAPI_CALL Hook_vkEnumerateInstanceExtensionProperties(const char* pLayerName,
                                                                            uint32_t* pPropertyCount,
@@ -48,10 +50,12 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL Hook_vkGetInstanceProcAddr(VkInstance i
   if (strcmp(pName, "vkCreateDevice") == 0)
     return (PFN_vkVoidFunction)Hook_vkCreateDevice;
 
-  if (strcmp(pName, "vkEnumerateInstanceExtensionProperties") == 0)
-    return (PFN_vkVoidFunction)Hook_vkEnumerateInstanceExtensionProperties;
-  if (strcmp(pName, "vkEnumerateInstanceLayerProperties") == 0)
-    return (PFN_vkVoidFunction)Hook_vkEnumerateInstanceLayerProperties;
+  if (g_patchesInstalled) {
+    if (strcmp(pName, "vkEnumerateInstanceExtensionProperties") == 0)
+      return (PFN_vkVoidFunction)Hook_vkEnumerateInstanceExtensionProperties;
+    if (strcmp(pName, "vkEnumerateInstanceLayerProperties") == 0)
+      return (PFN_vkVoidFunction)Hook_vkEnumerateInstanceLayerProperties;
+  }
 
   if (instance == VK_NULL_HANDLE)
     return NULL;
@@ -71,14 +75,17 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL Hook_vkGetInstanceProcAddr(VkInstance i
 VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL Hook_vkGetDeviceProcAddr(VkDevice device, const char* pName) {
   if (strcmp(pName, "vkGetDeviceProcAddr") == 0)
     return (PFN_vkVoidFunction)Hook_vkGetDeviceProcAddr;
-  if (strcmp(pName, "vkGetDeviceQueue") == 0)
-    return (PFN_vkVoidFunction)Hook_vkGetDeviceQueue;
-  if (strcmp(pName, "vkQueuePresentKHR") == 0)
-    return (PFN_vkVoidFunction)Hook_vkQueuePresentKHR;
-  if (strcmp(pName, "vkCreateSwapchainKHR") == 0)
-    return (PFN_vkVoidFunction)Hook_vkCreateSwapchainKHR;
-  if (strcmp(pName, "vkCreateImage") == 0)
-    return (PFN_vkVoidFunction)Hook_vkCreateImage;
+
+  if (g_patchesInstalled) {
+    if (strcmp(pName, "vkGetDeviceQueue") == 0)
+      return (PFN_vkVoidFunction)Hook_vkGetDeviceQueue;
+    if (strcmp(pName, "vkQueuePresentKHR") == 0)
+      return (PFN_vkVoidFunction)Hook_vkQueuePresentKHR;
+    if (strcmp(pName, "vkCreateSwapchainKHR") == 0)
+      return (PFN_vkVoidFunction)Hook_vkCreateSwapchainKHR;
+    if (strcmp(pName, "vkCreateImage") == 0)
+      return (PFN_vkVoidFunction)Hook_vkCreateImage;
+  }
 
   PFN_vkGetDeviceProcAddr next_gdpa = nullptr;
   {
@@ -101,17 +108,25 @@ LAYER_EXPORT PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, 
 }
 
 LAYER_EXPORT VkResult VKAPI_CALL vkNegotiateLoaderLayerInterfaceVersion(VkNegotiateLayerInterface* pVersionStruct) {
-  if (!PatchCreateDirectModeSurface())
-    return VK_ERROR_INITIALIZATION_FAILED;
-  
-  if (!InstallFunchook())
-    return VK_ERROR_INITIALIZATION_FAILED;
-
   if (pVersionStruct->loaderLayerInterfaceVersion >= 2) {
+    pVersionStruct->loaderLayerInterfaceVersion = 2;
     pVersionStruct->pfnGetInstanceProcAddr = Hook_vkGetInstanceProcAddr;
     pVersionStruct->pfnGetDeviceProcAddr = Hook_vkGetDeviceProcAddr;
     pVersionStruct->pfnGetPhysicalDeviceProcAddr = nullptr;
   }
 
   return VK_SUCCESS;
+}
+
+__attribute__((constructor)) static void init() {
+  // These also double as a litmus test to know if we were loaded by vrcompositor.
+  // If the symbols aren't found, we'll just skip applying the other fixes.
+
+  if (!PatchCreateDirectModeSurface())
+    return;
+
+  if (!InstallFunchook())
+    return;
+
+  g_patchesInstalled = true;
 }

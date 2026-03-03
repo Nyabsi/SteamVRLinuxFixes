@@ -72,113 +72,118 @@ VKAPI_ATTR VkResult VKAPI_CALL Hook_vkCreateDevice(VkPhysicalDevice physicalDevi
 
   PFN_vkCreateDevice next_createDevice = (PFN_vkCreateDevice)next_gipa(VK_NULL_HANDLE, "vkCreateDevice");
 
-  std::vector<const char*> newExtensions;
-  bool hasPresentIdExt = false;
-  bool hasPresentWaitExt = false;
-  bool hasTimelineExt = false;
-  bool hasFifoLatestReady = false;
+  VkResult result;
+  if (g_patchesInstalled) {
+    std::vector<const char*> newExtensions;
+    bool hasPresentIdExt = false;
+    bool hasPresentWaitExt = false;
+    bool hasTimelineExt = false;
+    bool hasFifoLatestReady = false;
 
-  for (uint32_t i = 0; i < pCreateInfo->enabledExtensionCount; i++) {
-    newExtensions.push_back(pCreateInfo->ppEnabledExtensionNames[i]);
-    if (strcmp(pCreateInfo->ppEnabledExtensionNames[i], VK_KHR_PRESENT_ID_EXTENSION_NAME) == 0)
-      hasPresentIdExt = true;
-    if (strcmp(pCreateInfo->ppEnabledExtensionNames[i], VK_KHR_PRESENT_WAIT_EXTENSION_NAME) == 0)
-      hasPresentWaitExt = true;
-    if (strcmp(pCreateInfo->ppEnabledExtensionNames[i], VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME) == 0)
-      hasTimelineExt = true;
-    if (strcmp(pCreateInfo->ppEnabledExtensionNames[i], VK_EXT_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME) == 0)
-      hasFifoLatestReady = true;
-  }
+    for (uint32_t i = 0; i < pCreateInfo->enabledExtensionCount; i++) {
+      newExtensions.push_back(pCreateInfo->ppEnabledExtensionNames[i]);
+      if (strcmp(pCreateInfo->ppEnabledExtensionNames[i], VK_KHR_PRESENT_ID_EXTENSION_NAME) == 0)
+        hasPresentIdExt = true;
+      if (strcmp(pCreateInfo->ppEnabledExtensionNames[i], VK_KHR_PRESENT_WAIT_EXTENSION_NAME) == 0)
+        hasPresentWaitExt = true;
+      if (strcmp(pCreateInfo->ppEnabledExtensionNames[i], VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME) == 0)
+        hasTimelineExt = true;
+      if (strcmp(pCreateInfo->ppEnabledExtensionNames[i], VK_EXT_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME) == 0)
+        hasFifoLatestReady = true;
+    }
 
-  if (!hasPresentIdExt)
-    newExtensions.push_back(VK_KHR_PRESENT_ID_EXTENSION_NAME);
-  if (!hasPresentWaitExt)
-    newExtensions.push_back(VK_KHR_PRESENT_WAIT_EXTENSION_NAME);
-  if (!hasTimelineExt)
-    newExtensions.push_back(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
+    if (!hasPresentIdExt)
+      newExtensions.push_back(VK_KHR_PRESENT_ID_EXTENSION_NAME);
+    if (!hasPresentWaitExt)
+      newExtensions.push_back(VK_KHR_PRESENT_WAIT_EXTENSION_NAME);
+    if (!hasTimelineExt)
+      newExtensions.push_back(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
 
-  // Check if the physical device supports
-  // VK_EXT_present_mode_fifo_latest_ready
-  if (!hasFifoLatestReady) {
-    VkInstance instance = g_physDevToInstance[physicalDevice];
-    if (instance) {
-      PFN_vkEnumerateDeviceExtensionProperties enumDevExts =
-          (PFN_vkEnumerateDeviceExtensionProperties)next_gipa(instance, "vkEnumerateDeviceExtensionProperties");
+    // Check if the physical device supports
+    // VK_EXT_present_mode_fifo_latest_ready
+    if (!hasFifoLatestReady) {
+      VkInstance instance = g_physDevToInstance[physicalDevice];
+      if (instance) {
+        PFN_vkEnumerateDeviceExtensionProperties enumDevExts =
+            (PFN_vkEnumerateDeviceExtensionProperties)next_gipa(instance, "vkEnumerateDeviceExtensionProperties");
 
-      if (enumDevExts) {
-        uint32_t extCount = 0;
-        enumDevExts(physicalDevice, nullptr, &extCount, nullptr);
-        std::vector<VkExtensionProperties> exts(extCount);
-        enumDevExts(physicalDevice, nullptr, &extCount, exts.data());
+        if (enumDevExts) {
+          uint32_t extCount = 0;
+          enumDevExts(physicalDevice, nullptr, &extCount, nullptr);
+          std::vector<VkExtensionProperties> exts(extCount);
+          enumDevExts(physicalDevice, nullptr, &extCount, exts.data());
 
-        for (const auto& ext : exts) {
-          if (strcmp(ext.extensionName, VK_EXT_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME) == 0) {
-            newExtensions.push_back(VK_EXT_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME);
-            hasFifoLatestReady = true;
-            break;
+          for (const auto& ext : exts) {
+            if (strcmp(ext.extensionName, VK_EXT_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME) == 0) {
+              newExtensions.push_back(VK_EXT_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME);
+              hasFifoLatestReady = true;
+              break;
+            }
           }
         }
       }
     }
-  }
 
-  bool foundTimeline = false, foundPresentId = false, foundPresentWait = false, foundFifoLatestReady = false;
-  void* currentNext = const_cast<void*>(pCreateInfo->pNext);
+    bool foundTimeline = false, foundPresentId = false, foundPresentWait = false, foundFifoLatestReady = false;
+    void* currentNext = const_cast<void*>(pCreateInfo->pNext);
 
-  while (currentNext) {
-    VkBaseOutStructure* base = (VkBaseOutStructure*)currentNext;
-    if (base->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES_KHR ||
-        base->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES) {
-      foundTimeline = true;
-    } else if (base->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR) {
-      foundPresentId = true;
-    } else if (base->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_FEATURES_KHR) {
-      foundPresentWait = true;
-    } else if (base->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_MODE_FIFO_LATEST_READY_FEATURES_EXT) {
-      foundFifoLatestReady = true;
-      ((VkPhysicalDevicePresentModeFifoLatestReadyFeaturesEXT*)base)->presentModeFifoLatestReady = VK_TRUE;
+    while (currentNext) {
+      VkBaseOutStructure* base = (VkBaseOutStructure*)currentNext;
+      if (base->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES_KHR ||
+          base->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES) {
+        foundTimeline = true;
+      } else if (base->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR) {
+        foundPresentId = true;
+      } else if (base->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_FEATURES_KHR) {
+        foundPresentWait = true;
+      } else if (base->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_MODE_FIFO_LATEST_READY_FEATURES_EXT) {
+        foundFifoLatestReady = true;
+        ((VkPhysicalDevicePresentModeFifoLatestReadyFeaturesEXT*)base)->presentModeFifoLatestReady = VK_TRUE;
+      }
+      currentNext = base->pNext;
     }
-    currentNext = base->pNext;
+
+    void* headNext = const_cast<void*>(pCreateInfo->pNext);
+
+    VkPhysicalDeviceTimelineSemaphoreFeaturesKHR featTimeline = {
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES_KHR};
+    if (!foundTimeline) {
+      featTimeline.timelineSemaphore = VK_TRUE;
+      featTimeline.pNext = headNext;
+      headNext = &featTimeline;
+    }
+
+    VkPhysicalDevicePresentIdFeaturesKHR featId = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR};
+    if (!foundPresentId) {
+      featId.presentId = VK_TRUE;
+      featId.pNext = headNext;
+      headNext = &featId;
+    }
+
+    VkPhysicalDevicePresentWaitFeaturesKHR featWait = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_FEATURES_KHR};
+    if (!foundPresentWait) {
+      featWait.presentWait = VK_TRUE;
+      featWait.pNext = headNext;
+      headNext = &featWait;
+    }
+
+    VkPhysicalDevicePresentModeFifoLatestReadyFeaturesEXT featFifoLatestReady = {
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_MODE_FIFO_LATEST_READY_FEATURES_EXT};
+    if (hasFifoLatestReady && !foundFifoLatestReady) {
+      featFifoLatestReady.presentModeFifoLatestReady = VK_TRUE;
+      featFifoLatestReady.pNext = headNext;
+      headNext = &featFifoLatestReady;
+    }
+
+    VkDeviceCreateInfo newCreateInfo = *pCreateInfo;
+    newCreateInfo.enabledExtensionCount = (uint32_t)newExtensions.size();
+    newCreateInfo.ppEnabledExtensionNames = newExtensions.data();
+    newCreateInfo.pNext = headNext;
+
+    result = next_createDevice(physicalDevice, &newCreateInfo, pAllocator, pDevice);
+  } else {
+    result = next_createDevice(physicalDevice, pCreateInfo, pAllocator, pDevice);
   }
-
-  void* headNext = const_cast<void*>(pCreateInfo->pNext);
-
-  VkPhysicalDeviceTimelineSemaphoreFeaturesKHR featTimeline = {
-      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES_KHR};
-  if (!foundTimeline) {
-    featTimeline.timelineSemaphore = VK_TRUE;
-    featTimeline.pNext = headNext;
-    headNext = &featTimeline;
-  }
-
-  VkPhysicalDevicePresentIdFeaturesKHR featId = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR};
-  if (!foundPresentId) {
-    featId.presentId = VK_TRUE;
-    featId.pNext = headNext;
-    headNext = &featId;
-  }
-
-  VkPhysicalDevicePresentWaitFeaturesKHR featWait = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_FEATURES_KHR};
-  if (!foundPresentWait) {
-    featWait.presentWait = VK_TRUE;
-    featWait.pNext = headNext;
-    headNext = &featWait;
-  }
-
-  VkPhysicalDevicePresentModeFifoLatestReadyFeaturesEXT featFifoLatestReady = {
-      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_MODE_FIFO_LATEST_READY_FEATURES_EXT};
-  if (hasFifoLatestReady && !foundFifoLatestReady) {
-    featFifoLatestReady.presentModeFifoLatestReady = VK_TRUE;
-    featFifoLatestReady.pNext = headNext;
-    headNext = &featFifoLatestReady;
-  }
-
-  VkDeviceCreateInfo newCreateInfo = *pCreateInfo;
-  newCreateInfo.enabledExtensionCount = (uint32_t)newExtensions.size();
-  newCreateInfo.ppEnabledExtensionNames = newExtensions.data();
-  newCreateInfo.pNext = headNext;
-
-  VkResult result = next_createDevice(physicalDevice, &newCreateInfo, pAllocator, pDevice);
 
   if (result == VK_SUCCESS) {
     std::lock_guard<std::mutex> lock(g_mapMutex);
@@ -319,8 +324,7 @@ VKAPI_ATTR VkResult VKAPI_CALL Hook_vkQueuePresentKHR(VkQueue queue, const VkPre
   }
 
   if (!next_present) {
-    std::cerr << "CRITICAL: Failed to resolve dispatch for Queue " << queue << ". Dropping frame."
-              << std::endl;
+    std::cerr << "CRITICAL: Failed to resolve dispatch for Queue " << queue << ". Dropping frame." << std::endl;
     return VK_SUCCESS;
   }
 

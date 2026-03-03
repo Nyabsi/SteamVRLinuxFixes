@@ -25,9 +25,10 @@ extern std::atomic<uint64_t> g_presentCounter;
 extern VkSwapchainKHR g_lastSwapchain;
 
 extern std::unordered_map<VkInstance, PFN_vkGetInstanceProcAddr> g_next_gipa;
-
 extern std::unordered_map<VkDevice, DeviceDispatch> g_deviceDispatch;
 extern std::mutex g_mapMutex;
+
+extern bool g_patchesInstalled;
 
 // Track which Physical Device belongs to which Instance
 extern std::unordered_map<VkPhysicalDevice, VkInstance> g_physDevToInstance;
