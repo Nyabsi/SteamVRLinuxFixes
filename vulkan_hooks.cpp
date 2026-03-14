@@ -217,13 +217,30 @@ VKAPI_ATTR VkResult VKAPI_CALL Hook_vkCreateImage(VkDevice device,
   if (!next_create)
     return VK_ERROR_INITIALIZATION_FAILED;
 
-  // Fix issue with 0x0 textures crashing vrcompositor on some platforms
   VkImageCreateInfo modifiedInfo = *pCreateInfo;
 
+  // Fix issue with 0x0 textures crashing vrcompositor on some platforms
   if (modifiedInfo.extent.width == 0)
     modifiedInfo.extent.width = 1;
   if (modifiedInfo.extent.height == 0)
     modifiedInfo.extent.height = 1;
+
+  // Fixes an Mesa 26.0.0+ crash on UB due to https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/38714
+  const bool likely_missing_attachment_bit =
+      (modifiedInfo.imageType == VK_IMAGE_TYPE_2D) &&
+      (modifiedInfo.extent.width >= 1024 && modifiedInfo.extent.width <= 4096) &&
+      (modifiedInfo.extent.height >= 1024 && modifiedInfo.extent.height <= 4096) &&
+      (modifiedInfo.arrayLayers <= 2) &&
+      (modifiedInfo.usage & (VK_IMAGE_USAGE_SAMPLED_BIT |
+                             VK_IMAGE_USAGE_STORAGE_BIT |
+                             VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                             VK_IMAGE_USAGE_TRANSFER_SRC_BIT)) &&
+      !(modifiedInfo.usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                              VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT));
+
+  if (likely_missing_attachment_bit) {
+    modifiedInfo.usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+  }
 
   return next_create(device, &modifiedInfo, pAllocator, pImage);
 }
